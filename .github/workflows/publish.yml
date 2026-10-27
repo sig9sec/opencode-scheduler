@@ -1,0 +1,37 @@
+# Publishes to npm on version tags (v*), authenticating with OpenID Connect
+# trusted publishing instead of an npm token. Requires the trusted publisher
+# configured on npmjs.com for this package (org: sig9sec, repo:
+# opencode-scheduler, workflow filename: publish.yml). Provenance
+# attestations are generated automatically for OIDC publishes.
+name: Publish
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  id-token: write # Required for OIDC
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          # Never use caching in release builds.
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Verify tag matches package version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${VERSION}"
+            exit 1
+          fi
+      - run: npm publish --access public

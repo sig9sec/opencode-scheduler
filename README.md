@@ -151,6 +151,14 @@ The old `supervisor.pl` is left in place and is simply no longer referenced; you
 - **`opencode` not found in scheduled runs**: the plugin records an absolute path at schedule time; if you moved your OpenCode install, re-save the job (`update_job`) or set `OPENCODE_SCHEDULER_OPENCODE_PATH`.
 - **Supervisor runtime**: resolved when the job is installed; override with `OPENCODE_SCHEDULER_NODE_PATH`.
 
+## Releasing
+
+Publishing happens from CI with [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC, no npm token) and automatic provenance attestations:
+
+1. Bump `version` in `package.json` and commit to `master`.
+2. Tag it with the matching version: `git tag v2.0.1 && git push origin master --tags`.
+3. The `Publish` workflow typechecks, verifies the tag matches `package.json`, and publishes to npm.
+
 ## License
 
 MIT
