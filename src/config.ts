@@ -158,8 +158,8 @@ function isExecutable(path: string): boolean {
 
 const COMMON_OPENCODE_LOCATIONS = [
   "/usr/local/bin/opencode",
-  "/opt/homebrew/bin/opencode",
   join(homedir(), ".local", "bin", "opencode"),
+  // Legacy 1.x install location.
   join(homedir(), ".opencode", "bin", "opencode"),
 ]
 

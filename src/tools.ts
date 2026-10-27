@@ -4,7 +4,6 @@
  */
 import { spawn } from "child_process"
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, rmSync } from "fs"
-import { homedir } from "os"
 import { join } from "path"
 import type { Plugin } from "@opencode/plugin"
 import {
