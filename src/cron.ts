@@ -117,6 +117,22 @@ function formatTime(hour: number, minute: number): string {
   return `${displayHour}:${minute.toString().padStart(2, "0")} ${ampm}`
 }
 
+const DOW_RULES = { min: 0, max: 7, label: "day of week" }
+
+function describeDowField(dow: string): string | null {
+  let values: number[] | null
+  try {
+    values = parseCronField(dow, DOW_RULES)
+  } catch {
+    return null
+  }
+  if (!values || values.length === 0) return null
+  const names = values.map((v) => DOW_NAMES[v % 7] ?? String(v))
+  const consecutive = values.every((v, i) => i === 0 || v === values[i - 1] + 1)
+  if (consecutive && values.length > 2) return `${names[0]}-${names[names.length - 1]}`
+  return names.join("/")
+}
+
 export function describeCron(cron: string): string {
   let fields: CronField
   try {
@@ -141,12 +157,19 @@ export function describeCron(cron: string): string {
   }
 
   if (!all(dow) && all(dom) && all(mon) && /^\d+$/.test(hour) && /^\d+$/.test(minute)) {
-    const dayIndex = parseInt(dow) % 7
-    const day = DOW_NAMES[dayIndex]
-    if (day) return `${day}s at ${formatTime(parseInt(hour), parseInt(minute))}`
+    const days = describeDowField(dow)
+    if (days) {
+      const label = namesCount(days) === 1 ? `${days}s` : days
+      return `${label} at ${formatTime(parseInt(hour), parseInt(minute))}`
+    }
   }
 
   return cron
+}
+
+/** "Monday" (one name) vs "Monday/Wednesday" or "Monday-Friday" (several). */
+function namesCount(days: string): number {
+  return days.split(/[/-]/).length
 }
 
 // === systemd conversion ===
