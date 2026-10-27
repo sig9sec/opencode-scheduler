@@ -1,237 +1,139 @@
-# opencode-scheduler
+# @sig9sec/opencode-scheduler
 
-Run AI agents on a schedule. Set up recurring tasks that execute autonomously—even when you're away.
+Run OpenCode agents on a schedule. Describe a recurring task once; it executes autonomously, even when you are away.
 
 ```
 Schedule a daily job at 9am to search Facebook Marketplace for posters under $100 and send the top 5 deals to my Telegram
 ```
 
-This is an [OpenCode](https://opencode.ai) plugin that uses your OS's native scheduler (launchd on macOS, systemd on Linux, Task Scheduler on Windows), with cron fallback where native backends are unavailable.
-
-As of `v1.2.0`, jobs are scoped by `workdir` (so different projects don't collide), and scheduled runs are supervised (no overlap + optional timeout).
+This is an [OpenCode](https://opencode.ai) **v2** plugin (a fork of `different-ai/opencode-scheduler`, ported to the v2 plugin API and Linux-only). It schedules `opencode run` prompts with your OS scheduler: systemd `--user` timers, with cron as a fallback.
 
 ## Install
 
-Add to your `opencode.json`:
+Add to your `opencode.json(c)`:
 
-```json
+```jsonc
 {
-  "plugin": ["opencode-scheduler"]
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@sig9sec/opencode-scheduler"]
 }
 ```
 
-## Examples
+Or load a local checkout by path:
 
-**Daily deal hunting:**
-```
-Schedule a daily job at 9am to search for standing desks under $300
-```
-
-**Weekly reports:**
-```
-Schedule a job every Monday at 8am to summarize my GitHub notifications
+```jsonc
+{
+  "plugins": ["/path/to/opencode-scheduler"]
+}
 ```
 
-**Recurring reminders:**
-```
-Schedule a job every 6 hours to check if my website is up and alert me on Slack if it's down
-```
+Linux only. Requires a systemd user session (normal on desktop Linux); falls back to `crontab` when systemd `--user` is unavailable. A `node` (or `bun`) binary is used for run supervision; without one, jobs still run but unsupervised (no overlap protection, metadata, or timeout).
 
-## Commands
+## How it works
 
-| Command | Example |
-|---------|---------|
-| Schedule a job | `Schedule a daily job at 9am to...` |
-| List jobs | `Show my scheduled jobs` |
-| Get version | `Show scheduler version` |
-| Install skill template | `Install the scheduled job best practices skill` |
-| Get job | `Show details for standing-desk` |
-| Update job | `Update standing-desk to run at 10am` |
-| Run immediately | `Run the standing-desk job now` |
-| View logs | `Show logs for standing-desk` |
-| Delete | `Delete the standing-desk job` |
-| Global cleanup (dry run) | `Run scheduler global cleanup` |
+1. You describe what you want scheduled; the plugin writes a job file (JSON) scoped to your working directory.
+2. It installs a systemd user timer (or cron entry) that runs a small supervisor script at each tick.
+3. The supervisor runs `opencode run` in the job's working directory, appends output to the job log, updates job metadata, and records run history.
+4. Jobs pick up the `opencode.json`, MCP servers, and skills configured in their working directory.
 
-## How It Works
+Manual triggers (`run_job`) go through the same supervisor, so scheduled and manual runs behave identically.
 
-1. You describe what you want scheduled in natural language
-2. The plugin writes a job file (scoped by `workdir`) and installs a timer in your OS scheduler
-3. At the scheduled time, the OS scheduler calls a small supervisor script
-4. The supervisor runs the job, appends logs, and updates job metadata
+### Reliability guarantees
 
-You can also trigger a job immediately via `run_job`—it runs fire-and-forget and appends to the same log file.
+- **No overlap**: a live run holds a lock; the next tick is skipped and logged instead of piling on. systemd additionally never starts a oneshot service twice.
+- **Catch-up**: timers are `Persistent=true`; a tick missed while the machine was off runs at the next opportunity. (The cron fallback does not replay missed runs.)
+- **Network-aware**: services order after `network-online.target`.
+- **Optional timeout**: `timeoutSeconds` SIGTERMs the run's whole process group, then SIGKILLs after a grace period; systemd holds a `TimeoutStartSec` backstop.
+- **Non-interactive**: scheduled runs pass `--auto`, which auto-approves any permission not explicitly denied. Deny rules in your config always stay enforced. Jobs never block on a prompt.
+- **Clean environment**: `OPENCODE_*` variables from your interactive session are not inherited by scheduled runs.
 
-Jobs run from the working directory where you created them, picking up your `opencode.json` and MCP configurations.
+## Tools
 
-### Reliability Guarantees (Scheduled Runs)
+| Tool | Description |
+|------|-------------|
+| `schedule_job` | Create a job (name, cron schedule, prompt, options) |
+| `list_jobs` | List jobs in this workspace (`allScopes` for everywhere) |
+| `get_job` | Job details and last-run status |
+| `update_job` | Update schedule/prompt/options; empty string clears an optional field |
+| `delete_job` | Remove a job's scheduler units and definition (logs are kept) |
+| `run_job` | Trigger a job now (fire-and-forget) |
+| `job_logs` | Tail a job's log |
+| `cleanup_global` | Remove all scheduler artifacts everywhere (dry-run by default, `confirm: true` to execute) |
 
-- **No overlap**: if the previous run is still active, the next scheduled tick is skipped.
-- **Non-interactive by default**: scheduled runs force `OPENCODE_PERMISSION` to deny "question" prompts, so jobs don't hang waiting for approvals.
-- **Optional timeout**: set `timeoutSeconds` to hard-stop long runs (SIGTERM, then SIGKILL).
+## Run options
 
-### Platform Support
+`schedule_job` / `update_job` map directly onto `opencode run` flags:
 
-| Platform | Scheduler backend | Notes |
-|------|------|------|
-| macOS | `launchd` | Full support (supervised scheduled runs) |
-| Linux (systemd available) | `systemd --user` | Full support (supervised scheduled runs) |
-| Linux / POSIX (no systemd) | `cron` (`crontab`) | Fallback backend (no missed-run catch-up) |
-| Windows | `schtasks` (Task Scheduler) | Supported with cron subset mapping (see limits below) |
+| Field | Flag | Notes |
+|-------|------|-------|
+| `prompt` | (positional) | Required. Tip: start it with `@scheduled-job-best-practices` |
+| `model` | `--model` | `provider/model[#variant]` |
+| `agent` | `--agent` | |
+| `title` | `--title` | |
+| `format` | `--format` | `default` or `json` |
+| `files` | `--file` | One flag per entry |
+| `session` / `continue` | `--session` / `--continue` | Resume a session |
+| `autoApprove` | `--auto` | Default `true`; set `false` only if something answers prompts |
+| `serverUrl` | `--server` | Run against a remote OpenCode server |
+| `timeoutSeconds` | | Supervisor hard limit; `0` disables |
+| `workdir` | | Defaults to the workspace the job was created in |
 
-Windows Task Scheduler limits:
+Jobs are scoped by `workdir`: storage, logs, and unit names are isolated per project, so same-named jobs in different projects never collide.
 
-- Cron expressions that use unsupported combinations (for example, month + weekday constraints, or month-only without explicit day-of-month) return a clear error with guidance.
-- Complex cron schedules may be expanded into multiple Windows tasks under `\\OpenCode\\opencode-job-...`.
-- Windows scheduled runs currently do **not** use the supervisor pipeline used on macOS/Linux, so no-overlap and timeout enforcement are not guaranteed by the OS integration itself.
+## Cron syntax
 
----
-
-## Reference
-
-### Cron Syntax
-
-Jobs use standard 5-field cron expressions:
-
-```
-┌───────────── minute (0-59)
-│ ┌───────────── hour (0-23)
-│ │ ┌───────────── day of month (1-31)
-│ │ │ ┌───────────── month (1-12)
-│ │ │ │ ┌───────────── day of week (0-6, Sunday=0)
-│ │ │ │ │
-* * * * *
-```
+Standard 5-field expressions, with `*`, lists, ranges, and steps:
 
 | Expression | Meaning |
 |------------|---------|
 | `0 9 * * *` | Daily at 9:00 AM |
 | `0 */6 * * *` | Every 6 hours |
 | `30 8 * * 1` | Mondays at 8:30 AM |
-| `0 9,17 * * *` | At 9 AM and 5 PM daily |
+| `*/15 9-17 * * *` | Every 15 minutes between 9:00 and 17:59 |
 
-### Tools
-
-| Tool | Description |
-|------|-------------|
-| `schedule_job` | Create a new scheduled job |
-| `list_jobs` | List all scheduled jobs |
-| `get_version` | Show scheduler and opencode versions |
-| `get_skill` | Get built-in skill templates (best practices) |
-| `install_skill` | Install a built-in skill into your repo |
-| `get_job` | Fetch job details and metadata |
-| `update_job` | Update an existing job |
-| `delete_job` | Remove a scheduled job |
-| `cleanup_global` | Remove scheduler artifacts across all scopes (dry-run by default) |
-| `run_job` | Execute a job immediately (fire-and-forget) |
-| `job_logs` | View the latest logs from a job |
-
-`schedule_job` and `update_job` accept an optional `timeoutSeconds` (integer seconds). Use `0` (or omit) to disable.
-
-Tools accept an optional `format: "json"` argument to return structured output with `success`, `output`, `shouldContinue`, and `data`.
-
-### Global Cleanup
-
-Use `cleanup_global` to clean scheduler artifacts across all scopes. It always starts in dry-run mode unless you pass `confirm: true`.
-
-- Dry run (safe default):
-
-```json
-{ "confirm": false }
-```
-
-- Execute global cleanup of job definitions + lock files + scheduler units:
-
-```json
-{ "confirm": true }
-```
-
-- Also delete logs and run history:
-
-```json
-{ "confirm": true, "includeHistory": true }
-```
-
-The tool reports exactly how many artifacts were removed, grouped by location (jobs, locks, logs, runs, launchd/systemd units).
-
-### Storage
+## Storage
 
 | What | Where |
 |------|-------|
-| Job configs (scoped) | `~/.config/opencode/scheduler/scopes/<scopeId>/jobs/*.json` |
-| Run records (scoped) | `~/.config/opencode/scheduler/scopes/<scopeId>/runs/*.jsonl` |
-| Locks (scoped) | `~/.config/opencode/scheduler/scopes/<scopeId>/locks/*.json` |
-| Logs (scoped) | `~/.config/opencode/logs/scheduler/<scopeId>/*.log` |
-| Supervisor script | `~/.config/opencode/scheduler/supervisor.pl` |
-| launchd plists (Mac) | `~/Library/LaunchAgents/com.opencode.job.<scopeId>.*.plist` |
-| systemd units (Linux) | `~/.config/systemd/user/opencode-job-<scopeId>-*.{service,timer}` |
-| Task Scheduler entries (Windows) | `\\OpenCode\\opencode-job-<scopeId>-*` |
+| Job definitions (per scope) | `~/.config/opencode/scheduler/scopes/<scopeId>/jobs/*.json` |
+| Run history (per scope) | `~/.config/opencode/scheduler/scopes/<scopeId>/runs/*.jsonl` |
+| Locks (per scope) | `~/.config/opencode/scheduler/scopes/<scopeId>/locks/*.json` |
+| Logs (per scope) | `~/.config/opencode/logs/scheduler/<scopeId>/*.log` |
+| Supervisor script | `~/.config/opencode/scheduler/supervisor.js` |
+| Skill file | `~/.config/opencode/scheduler/skills/scheduled-job-best-practices/SKILL.md` |
+| systemd units | `~/.config/systemd/user/opencode-job-<scopeId>-<slug>.{service,timer}` |
 
-Legacy note: older versions stored jobs in `~/.config/opencode/jobs/*.json` and used unscoped unit names. `delete_job` removes both scoped and legacy artifacts.
+### Plugin configuration
 
-### Working Directory
+`~/.config/opencode/opencode-scheduler.json` can set environment variables for scheduled runs (applied after the `OPENCODE_*` scrub, so it is also how you pass `OPENCODE_*` vars to jobs):
 
-Jobs run from a specific directory to pick up MCP configs:
-
-```
-Schedule a daily job at 9am from /path/to/project to run my-task
-```
-
-By default, jobs use the directory where you created them.
-
-### Scopes
-
-Scopes are derived from the job's `workdir` (normalized absolute path). This isolates job storage, logs, and OS scheduler unit names per project.
-
-- `list_jobs` defaults to the **current scope** (your current working directory).
-- Use `allScopes: true` to list jobs across all scopes.
-- Use `includeLegacy: true` to include pre-`v1.2.0` jobs stored in `~/.config/opencode/jobs`.
-
-### Attach URL (optional)
-
-If you have an OpenCode backend running via `opencode serve` or `opencode web`, you can set `attachUrl` on a job so runs use that backend:
-
-```
-Update the standing-desk job to use attachUrl http://localhost:4096
+```json
+{
+  "env": {
+    "set": { "OPENCODE_API_KEY": "sk-..." }
+  }
+}
 ```
 
-## Project Philosophy
+## Built-in skill
 
-- This plugin is intentionally a thin wrapper: it schedules `opencode run` via launchd/systemd/schtasks, with cron fallback when native backends are unavailable.
-- Logs are the source of truth for scheduled runs: `~/.config/opencode/logs/*.log`.
-- Resiliency/reporting roadmap (not implemented): `PRD-resilient-execution.md`.
+The plugin registers the `scheduled-job-best-practices` skill natively, so `@scheduled-job-best-practices` works at the top of any job prompt (including inside scheduled runs). It covers idempotency, runtime date computation, preflight checks, and a status output contract.
 
-### Built-in Skill Templates
+## Migrating from the 1.x plugin
 
-To install the built-in skill into your project (no copy/paste), open OpenCode in your repo and run:
+On first load the plugin migrates existing jobs in place:
 
-```
-Install the scheduled job best practices skill
-```
+- Invocations snapshotted with v1-only flags (`--dangerously-skip-permissions`, `--attach`, `--port`, `--share`, `--variant`, `--command`) are rebuilt from the job's prompt; `--dangerously-skip-permissions` is mapped to `--auto`.
+- Scheduler units are reinstalled to use the Node supervisor instead of the retired `supervisor.pl`.
+- Unit names, scopes, logs, and history are unchanged.
 
-This calls the plugin’s `install_skill` tool and writes `.opencode/skill/scheduled-job-best-practices/SKILL.md`.
-
-(If you prefer, you can also say: `Get skill from opencode-scheduler and add it to my skills`.)
-
-Then add `@scheduled-job-best-practices` at the top of scheduled job prompts.
-
-(Manual option: use `get_skill` to fetch `scheduled-job-best-practices` and copy it into `.opencode/skill/scheduled-job-best-practices/SKILL.md`.)
+The old `supervisor.pl` is left in place and is simply no longer referenced; you can delete it.
 
 ## Troubleshooting
 
-**Jobs not running?**
-
-1. Check if installed:
-   - Mac: `launchctl list | grep opencode`
-   - Linux: `systemctl --user list-timers | grep opencode`
-   - Windows: `schtasks /Query /TN "\\OpenCode\\opencode-job-*"`
-
-2. Check logs: `Show logs for my-job`
-
-3. Verify the working directory has the right `opencode.json` with MCP configs
-
-**MCP tools not available?**
-
-Make sure the job's working directory contains an `opencode.json` with your MCP server configurations.
+- **Job not running**: `systemctl --user list-timers | grep opencode`, then `journalctl --user` and the job's log (`job_logs` tool).
+- **`opencode` not found in scheduled runs**: the plugin records an absolute path at schedule time; if you moved your OpenCode install, re-save the job (`update_job`) or set `OPENCODE_SCHEDULER_OPENCODE_PATH`.
+- **Supervisor runtime**: resolved when the job is installed; override with `OPENCODE_SCHEDULER_NODE_PATH`.
 
 ## License
 
