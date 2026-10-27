@@ -153,11 +153,14 @@ The old `supervisor.pl` is left in place and is simply no longer referenced; you
 
 ## Releasing
 
-Publishing happens from CI with [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC, no npm token) and automatic provenance attestations:
+Publishing happens from CI with [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC, no npm token) and [staged publishing](https://docs.npmjs.com/staged-publishing): every release requires a maintainer's 2FA approval before it goes live.
 
 1. Bump `version` in `package.json` and commit to `master`.
 2. Tag it with the matching version: `git tag v2.0.1 && git push origin master --tags`.
-3. The `Publish` workflow typechecks, verifies the tag matches `package.json`, and publishes to npm.
+3. The `Publish` workflow typechecks, verifies the tag matches `package.json`, and stages the package.
+4. Approve the staged version with 2FA: npmjs.com -> Staged Packages -> Approve (or `npm stage approve <stage-id>`). Only then does the version become publicly installable.
+
+Provenance attestations are generated automatically for these publishes.
 
 ## License
 

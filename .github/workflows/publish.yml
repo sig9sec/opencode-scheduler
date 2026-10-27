@@ -1,7 +1,10 @@
 # Publishes to npm on version tags (v*), authenticating with OpenID Connect
 # trusted publishing instead of an npm token. Requires the trusted publisher
 # configured on npmjs.com for this package (org: sig9sec, repo:
-# opencode-scheduler, workflow filename: publish.yml). Provenance
+# opencode-scheduler, workflow filename: publish.yml) with staged publishing
+# (do NOT enable direct "npm publish"). Each release is staged by CI and
+# must be approved with 2FA on npmjs.com (Staged Packages tab) or via
+# `npm stage approve <stage-id>` before it goes live. Provenance
 # attestations are generated automatically for OIDC publishes.
 name: Publish
 
@@ -34,4 +37,4 @@ jobs:
             echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${VERSION}"
             exit 1
           fi
-      - run: npm publish --access public
+      - run: npm stage publish --access public
