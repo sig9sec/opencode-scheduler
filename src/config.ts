@@ -4,8 +4,7 @@
  * All durable state lives under ~/.config/opencode/scheduler, scoped by the
  * job's working directory so jobs from different projects never collide.
  */
-import { execFileSync } from "child_process"
-import { existsSync, mkdirSync, readFileSync } from "fs"
+import { accessSync, constants, existsSync, mkdirSync, readFileSync } from "fs"
 import { homedir, platform } from "os"
 import { basename, dirname, join, resolve } from "path"
 
@@ -135,17 +134,25 @@ export function enhancedPath(extraDirs: (string | undefined)[]): string {
   return Array.from(new Set(parts)).join(":")
 }
 
-/** Resolve a command through PATH using a guaranteed-clean search path. */
+/** Resolve a command through PATH: the inherited PATH first, then the standard locations. */
 export function which(command: string): string | null {
+  if (command.includes("/")) {
+    return isExecutable(command) ? command : null
+  }
+  const searchPath = [process.env.PATH, ...BASE_PATH_ENTRIES].filter((p): p is string => Boolean(p)).join(":")
+  for (const dir of new Set(searchPath.split(":"))) {
+    const candidate = join(dir, command)
+    if (isExecutable(candidate)) return candidate
+  }
+  return null
+}
+
+function isExecutable(path: string): boolean {
   try {
-    const out = execFileSync("/usr/bin/env", ["-i", `/usr/bin:/bin:${BASE_PATH_ENTRIES.join(":")}`, "which", command], {
-      stdio: ["ignore", "pipe", "ignore"],
-    })
-      .toString()
-      .trim()
-    return out || null
+    accessSync(path, constants.X_OK)
+    return true
   } catch {
-    return null
+    return false
   }
 }
 
