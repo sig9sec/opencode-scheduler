@@ -1,4 +1,4 @@
-# @sig9sec/opencode-scheduler
+# @sig9.ch/opencode-scheduler
 
 Run OpenCode agents on a schedule. Describe a recurring task once; it executes autonomously, even when you are away.
 
@@ -21,7 +21,7 @@ This is an [OpenCode](https://opencode.ai) **v2** plugin (a fork of `different-a
 ## Install
 
 ```sh
-opencode plugin add @sig9sec/opencode-scheduler
+opencode plugin add @sig9.ch/opencode-scheduler
 ```
 
 Or add it to your `opencode.json(c)` manually:
@@ -29,7 +29,7 @@ Or add it to your `opencode.json(c)` manually:
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["@sig9sec/opencode-scheduler"]
+  "plugins": ["@sig9.ch/opencode-scheduler"]
 }
 ```
 

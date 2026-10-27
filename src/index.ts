@@ -1,5 +1,5 @@
 /**
- * @sig9sec/opencode-scheduler
+ * @sig9.ch/opencode-scheduler
  *
  * OpenCode v2 plugin that schedules recurring `opencode run` prompts with
  * the OS scheduler (systemd --user timers, cron fallback). See README.md
