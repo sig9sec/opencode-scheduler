@@ -2,6 +2,16 @@
 
 Run OpenCode agents on a schedule. Describe a recurring task once; it executes autonomously, even when you are away.
 
+> **This is a fork** of [`different-ai/opencode-scheduler`](https://github.com/different-ai/opencode-scheduler) (v1.3.0). It is ported to the OpenCode v2 plugin API and focused on Linux. Changes from the original:
+>
+> - **OpenCode v2 plugin API**: `Plugin.define` + tool transforms instead of the v1 plugin function; job scopes come from the plugin's location directory instead of the server's `process.cwd()`.
+> - **Rewritten supervisor** in dependency-free Node (was perl): used for manual runs too, with no-overlap locking, SIGTERM->SIGKILL timeout escalation, job metadata, and append-only run history for every run. The log tail can no longer be truncated by a race between the child's output pipe and the supervisor's exit.
+> - **Fixed systemd timer generation**: the 1.x generator emitted an invalid leading `*` weekday in `OnCalendar` specs, which systemd rejected; units now order after `network-online.target`, keep `Persistent=true` catch-up, and carry a `TimeoutStartSec` backstop.
+> - **v2 run flags**: scheduled runs use `--auto` for non-interactive permission handling (v1's `OPENCODE_PERMISSION` env hack no longer exists); dead v1 invocation snapshots and v1-only flags are migrated in place on first load.
+> - **Native skill**: `scheduled-job-best-practices` is registered through the skill registry instead of being copied into repos by `get_skill`/`install_skill` tools (both removed, along with `get_version`).
+> - **Linux only** (systemd `--user`, cron fallback): the launchd and Windows Task Scheduler backends were dropped.
+> - **Simpler surface**: 8 tools, JSON-Schema inputs with real arrays for `files`, no shell string interpolation anywhere.
+
 ```
 Schedule a daily job at 9am to search Facebook Marketplace for posters under $100 and send the top 5 deals to my Telegram
 ```
