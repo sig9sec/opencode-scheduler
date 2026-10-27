@@ -127,6 +127,8 @@ On first load the plugin migrates existing jobs in place:
 - Scheduler units are reinstalled to use the Node supervisor instead of the retired `supervisor.pl`.
 - Unit names, scopes, logs, and history are unchanged.
 
+Because timers are `Persistent=true`, reinstalling a job whose schedule was missed fires one catch-up run right after migration. Subsequent reloads change nothing and trigger nothing.
+
 The old `supervisor.pl` is left in place and is simply no longer referenced; you can delete it.
 
 ## Troubleshooting
