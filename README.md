@@ -20,7 +20,11 @@ This is an [OpenCode](https://opencode.ai) **v2** plugin (a fork of `different-a
 
 ## Install
 
-Add to your `opencode.json(c)`:
+```sh
+opencode plugin add @sig9sec/opencode-scheduler
+```
+
+Or add it to your `opencode.json(c)` manually:
 
 ```jsonc
 {

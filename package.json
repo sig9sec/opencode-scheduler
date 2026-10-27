@@ -14,12 +14,14 @@
   },
   "keywords": [
     "opencode",
-    "plugin",
+    "opencode-plugin",
     "scheduler",
     "cron",
     "systemd",
     "automation",
-    "jobs"
+    "jobs",
+    "agent",
+    "recurring-tasks"
   ],
   "author": "sig9sec",
   "license": "MIT",
