@@ -147,7 +147,7 @@ function safeDirname(path: string | undefined | null): string | undefined {
   return path.slice(0, path.lastIndexOf("/"))
 }
 
-function installSystemdJob(job: Job, execStart: string[]): void {
+function installSystemdJob(job: Job, execStart: string[], enable: boolean): void {
   ensureDir(SYSTEMD_USER_DIR)
   ensureScopeStorage(job.scopeId)
 
@@ -156,7 +156,9 @@ function installSystemdJob(job: Job, execStart: string[]): void {
   writeFileSync(join(SYSTEMD_USER_DIR, `${base}.timer`), createSystemdTimer(job))
 
   run("systemctl", ["--user", "daemon-reload"], { check: true })
-  run("systemctl", ["--user", "enable", "--now", `${base}.timer`], { check: true })
+  if (enable) {
+    run("systemctl", ["--user", "enable", "--now", `${base}.timer`], { check: true })
+  }
 }
 
 function uninstallSystemdJob(job: Job): void {
@@ -250,6 +252,14 @@ function createCronEntry(job: Job, command: string[]): string {
   return `${job.schedule} PATH="${pathValue}" ${escaped.map((a) => `"${a}"`).join(" ")} >> "${logPath}" 2>&1`
 }
 
+function cronBlockExists(job: Job): boolean {
+  try {
+    return readUserCrontab().includes(`${cronBlockStart(cronBlockId(job))}\n`)
+  } catch {
+    return false
+  }
+}
+
 function installCronJob(job: Job, command: string[]): void {
   ensureScopeStorage(job.scopeId)
 
@@ -269,6 +279,42 @@ function uninstallCronJob(job: Job): void {
   }
   const stripped = stripManagedCronBlocks(current, new Set([cronBlockId(job)]))
   if (stripped.removed > 0) writeUserCrontab(stripped.content)
+}
+
+// === Enablement state ===
+
+/**
+ * Whether a job is currently scheduled, so reinstalls (update, migration)
+ * can preserve a timer the user deliberately disabled. Returns "unknown"
+ * when no unit exists yet (callers then default to enabling).
+ */
+export function jobScheduledState(job: Job): "scheduled" | "disabled" | "unknown" {
+  if (isSystemdUserAvailable()) {
+    try {
+      execFileSync("systemctl", ["--user", "is-enabled", `${unitBaseName(job)}.timer`], {
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+      return "scheduled"
+    } catch (error) {
+      const stderr =
+        typeof error === "object" && error !== null && "stderr" in error
+          ? (error as { stderr?: Buffer }).stderr?.toString("utf-8") ?? ""
+          : ""
+      if (/no such file|not found/i.test(stderr)) return "unknown"
+      return "disabled"
+    }
+  }
+
+  if (isCronAvailable()) {
+    try {
+      const blockId = cronBlockId(job)
+      return readUserCrontab().includes(`${cronBlockStart(blockId)}\n`) ? "scheduled" : "unknown"
+    } catch {
+      return "unknown"
+    }
+  }
+
+  return "unknown"
 }
 
 // === Cross-backend install/uninstall ===
@@ -296,18 +342,29 @@ export function buildSchedulerCommand(job: Job): { command: string[]; supervised
   return { command: directCommand(job), supervised: false }
 }
 
-export function installJob(job: Job): InstallResult {
+export interface InstallOptions {
+  /**
+   * Enable (and start) the timer. Defaults to true. Pass false to refresh
+   * unit files without resurrecting a timer the user disabled.
+   */
+  enable?: boolean
+}
+
+export function installJob(job: Job, options: InstallOptions = {}): InstallResult {
   if (!job.invocation) throw new Error("Job has no invocation snapshot")
 
+  const enable = options.enable !== false
   const { command, supervised } = buildSchedulerCommand(job)
 
   if (isSystemdUserAvailable()) {
-    installSystemdJob(job, command)
+    installSystemdJob(job, command, enable)
     return { backend: "systemd", supervised }
   }
 
   if (isCronAvailable()) {
-    installCronJob(job, command)
+    if (enable || cronBlockExists(job)) {
+      installCronJob(job, command)
+    }
     return { backend: "cron", supervised }
   }
 

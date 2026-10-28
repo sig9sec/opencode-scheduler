@@ -16,7 +16,7 @@
  */
 import { buildInvocation, invocationsEqual } from "./invocation.js"
 import { loadAllJobsAcrossScopes, saveJob, type Job } from "./jobs.js"
-import { installJob } from "./backends.js"
+import { installJob, jobScheduledState } from "./backends.js"
 
 export interface MigrationResult {
   migrated: string[]
@@ -48,9 +48,11 @@ export function migrateLegacyJobs(): MigrationResult {
 
       // Best effort: also repoint units from the perl supervisor to the new
       // node supervisor. The job file rewrite above is what actually fixes
-      // scheduled runs, so a unit reinstall failure is not fatal.
+      // scheduled runs, so a unit reinstall failure is not fatal. A timer
+      // the user deliberately disabled stays disabled.
       try {
-        installJob(updated)
+        const enable = jobScheduledState(job) !== "disabled"
+        installJob(updated, { enable })
       } catch (error) {
         result.failed.push({
           slug: job.slug,

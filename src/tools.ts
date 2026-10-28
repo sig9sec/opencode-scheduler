@@ -33,7 +33,7 @@ import {
   type Job,
   type JobRunSpec,
 } from "./jobs.js"
-import { buildSchedulerCommand, installJob, uninstallJob, listSystemdJobUnits } from "./backends.js"
+import { buildSchedulerCommand, installJob, jobScheduledState, uninstallJob, listSystemdJobUnits } from "./backends.js"
 import { ensureSupervisorScript } from "./supervisor.js"
 
 type ToolEditor = Parameters<Parameters<Plugin.Context["tool"]["transform"]>[0]>[0]
@@ -362,17 +362,21 @@ async function updateJob(args: UpdateJobArgs, locationDir: string): Promise<stri
     return `Error: failed to build the opencode invocation: ${errorMessage(error)}`
   }
 
+  // A timer the user disabled stays disabled across updates; an absent or
+  // enabled one is (re)enabled as usual.
+  const wasScheduled = jobScheduledState(job) !== "disabled"
+
   try {
     if (scopeChanged) uninstallJob(job)
     saveJob(updated)
-    installJob(updated)
+    installJob(updated, { enable: wasScheduled })
     if (scopeChanged) deleteJobFile(job)
     return [`Updated job "${updated.name}"`, "", `Schedule: ${updated.schedule} (${describeCron(updated.schedule)})`, ...runSummary(run)].join("\n")
   } catch (error) {
     // Best-effort rollback to the previous definition and schedule.
     try {
       saveJob(job)
-      installJob(job)
+      installJob(job, { enable: wasScheduled })
     } catch {
       // Rollback is best effort; the error below is the real signal.
     }
