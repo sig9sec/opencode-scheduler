@@ -1,6 +1,6 @@
 {
   "name": "@sig9.ch/opencode-scheduler",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "OpenCode v2 plugin for scheduling recurring jobs with systemd --user timers or cron fallback",
   "type": "module",
   "files": [
